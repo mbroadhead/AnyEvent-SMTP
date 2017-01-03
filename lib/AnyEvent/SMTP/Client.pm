@@ -130,6 +130,14 @@ SMTP server port. Optional. By default = 25
 
 SMTP server. The same as pair of host:port
 
+=item local_addr => hostname[:port]
+
+Local host bind address. Any format parseable by L<AnyEvent::Socket/parse_hostport> is allowed. Examples include: "my.host", "my.host:8000", "192.168.1.1", "192.168.1.1:1234".
+
+=item local_host => hostname[:port]
+
+An alias for L</local_addr>.
+
 =item helo => 'hostname'
 
 HELO message. Optional. By default = hostname()
@@ -240,6 +248,7 @@ sub sendmail(%) {
 	@args{map lc, @keys} = delete @args{ @keys };
 	$args{data} ||= delete $args{message} || delete $args{body};
 	$args{helo} ||= hostname();
+	$args{local_addr} ||= delete $args{local_host} if exists $args{local_host};
 	if ($args{server}) {
 		my ($h,$p) = $args{server} =~ /^([^:]+)(?:|:(\d+))$/;
 		$args{host} = $h or return $args{cb}(undef,"Bad option value for `server'");
@@ -329,7 +338,26 @@ sub sendmail(%) {
 
 				});
 			});
-		}, sub { $args{timeout} || 30 };
+		},
+		sub {
+			my $fh = shift;
+
+			# If specified, bind to the local_addr
+			if ( exists $args{local_addr} ) {
+
+				# default port=0, which lets the kernel decide what port to use
+				my ( $host, $port ) = parse_hostport( $args{local_addr}, 0 );
+
+				warn "binding to host=$host, port=$port" if $args{debug};
+
+				my $bind =
+				  AnyEvent::Socket::pack_sockaddr( $port,
+					parse_address($host) );
+				bind( $fh, $bind ) or die "bind: $!";
+			}
+
+			return $args{timeout} || 30;
+		};
 		
 	};
 	
